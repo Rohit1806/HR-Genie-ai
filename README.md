@@ -230,5 +230,5 @@ This project is licensed under the MIT License.
 ---
 
 <p align="center">
-  Built with ❤️ and AI by the HRGenie Team
+  Built with ❤️ and AI by R.Rohit Mani
 </p>
