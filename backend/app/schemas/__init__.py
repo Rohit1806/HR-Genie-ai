@@ -1,0 +1,1 @@
+# HRGenie AI Schemas Package

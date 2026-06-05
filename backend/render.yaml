@@ -1,0 +1,47 @@
+databases:
+  - name: hrgenie-db
+    plan: free
+    databaseName: hrgenie
+    user: hrgenie_user
+
+services:
+  - type: web
+    name: hrgenie-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hrgenie-db
+          property: connectionString
+      - key: REDIS_URL
+        value: ""
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "https://hrgenie-ai.vercel.app"
+    healthCheckPath: /health
+
+  - type: worker
+    name: hrgenie-celery
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.workers.celery_app worker --loglevel=info -c 2
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hrgenie-db
+          property: connectionString
+      - key: REDIS_URL
+        value: ""
+      - key: CELERY_BROKER_URL
+        value: ""
