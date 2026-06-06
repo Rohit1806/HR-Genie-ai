@@ -39,8 +39,29 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting HRGenie AI", version=settings.APP_VERSION)
     await init_redis()
-    if settings.DEBUG:
-        await init_db()
+    
+    # Run migrations and seed data on startup
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        logger.info("Running database migrations (Alembic upgrade head)...")
+        subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], 
+                      cwd=backend_dir,
+                      check=True)
+        logger.info("Migrations completed successfully.")
+        
+        logger.info("Seeding database demo data...")
+        subprocess.run([sys.executable, 'scripts/seed_demo_data.py'],
+                      cwd=backend_dir,
+                      check=True)
+        logger.info("Database seeding completed successfully.")
+    except Exception as e:
+        logger.error(f"Startup database initialization error: {e}")
+        
     yield
     # Shutdown
     await close_redis()

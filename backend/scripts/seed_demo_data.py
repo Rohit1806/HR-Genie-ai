@@ -1,9 +1,9 @@
-"""
-Seed demo data script for HRGenie AI.
-Seeds full relational records across all modules so the user starts with a populated database.
-"""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
+
 import sys
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
