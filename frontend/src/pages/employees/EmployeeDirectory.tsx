@@ -76,20 +76,20 @@ export default function EmployeeDirectory() {
       field: 'designation_title',
       headerName: 'Designation',
       flex: 1.2,
-      valueGetter: (value: any, row: any) => row.designation_title || '—',
+      valueGetter: (params: any) => params.row?.designation_title || '—',
     },
     {
       field: 'department_name',
       headerName: 'Department',
       flex: 1.2,
-      valueGetter: (value: any, row: any) => row.department_name || '—',
+      valueGetter: (params: any) => params.row?.department_name || '—',
     },
     {
       field: 'date_of_joining',
       headerName: 'Joining Date',
       flex: 1.0,
-      valueGetter: (value: any, row: any) =>
-        row.date_of_joining ? new Date(row.date_of_joining).toLocaleDateString() : '—',
+      valueGetter: (params: any) =>
+        params.row?.date_of_joining ? new Date(params.row.date_of_joining).toLocaleDateString() : '—',
     },
     {
       field: 'employment_status',
