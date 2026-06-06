@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-import whisper
+from faster_whisper import WhisperModel
 
 from app.ai.gemini_client import call_gemini_json
 from app.ai.prompts.voice_evaluation import VOICE_EVALUATION_PROMPT
@@ -26,7 +26,6 @@ from app.ai.prompts.voice_evaluation import VOICE_EVALUATION_PROMPT
 logger = logging.getLogger(__name__)
 
 # Load Whisper model once at module level (avoid reloading per call)
-# Uses "base" model for speed — upgrade to "small" or "medium" for accuracy
 _WHISPER_MODEL = None
 
 
@@ -34,7 +33,7 @@ def _get_whisper_model():
     global _WHISPER_MODEL
     if _WHISPER_MODEL is None:
         logger.info("Loading Whisper 'base' model...")
-        _WHISPER_MODEL = whisper.load_model("base")
+        _WHISPER_MODEL = WhisperModel("base", device="cpu", compute_type="int8")
         logger.info("Whisper model loaded.")
     return _WHISPER_MODEL
 
@@ -76,24 +75,24 @@ def transcribe_audio(file_path: str) -> dict:
     logger.info(f"Transcribing audio: {file_path} ({file_size_mb:.1f}MB)")
 
     model = _get_whisper_model()
-    result = model.transcribe(
+    segments_gen, info = model.transcribe(
         file_path,
+        beam_size=5,
         language=None,      # auto-detect
         task="transcribe",
-        verbose=False,
-        fp16=False,         # CPU-safe
     )
 
-    text = result.get("text", "").strip()
-    segments = [
-        {
-            "start": seg.get("start", 0),
-            "end": seg.get("end", 0),
-            "text": seg.get("text", "").strip(),
-        }
-        for seg in result.get("segments", [])
-    ]
+    segments = []
+    text_pieces = []
+    for seg in segments_gen:
+        segments.append({
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text.strip(),
+        })
+        text_pieces.append(seg.text)
 
+    text = " ".join(text_pieces).strip()
     # Estimate duration from last segment end
     duration = segments[-1]["end"] if segments else 0.0
 
@@ -101,7 +100,7 @@ def transcribe_audio(file_path: str) -> dict:
 
     return {
         "text": text,
-        "language": result.get("language", "en"),
+        "language": info.language if info else "en",
         "duration_seconds": duration,
         "segments": segments,
         "word_count": len(text.split()),
