@@ -48,7 +48,12 @@ async def lifespan(app: FastAPI):
         
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        logger.info("Running database migrations (Alembic upgrade head)...")
+        logger.info("Dropping all database tables (Alembic downgrade base)...")
+        subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', 'base'], 
+                      cwd=backend_dir,
+                      check=False)
+        
+        logger.info("Recreating database tables (Alembic upgrade head)...")
         subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], 
                       cwd=backend_dir,
                       check=True)
