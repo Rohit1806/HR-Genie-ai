@@ -137,6 +137,7 @@ async def main():
                         email=item["email"],
                         password_hash=hash_password("Demo@1234"),
                         role=item["role"],
+                        full_name=f"{item['first']} {item['last']}",
                     )
                     db.add(user)
                     await db.flush()

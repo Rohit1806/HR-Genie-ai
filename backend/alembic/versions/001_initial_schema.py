@@ -78,6 +78,8 @@ def upgrade() -> None:
         sa.Column('logo_url', sa.String(512), nullable=True),
         sa.Column('timezone', sa.String(64), nullable=False, server_default='UTC'),
         sa.Column('currency', sa.String(3), nullable=False, server_default='INR'),
+        sa.Column('industry', sa.String(100), nullable=True),
+        sa.Column('website', sa.String(255), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
@@ -91,6 +93,7 @@ def upgrade() -> None:
         sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('company_id', sa.UUID(), nullable=False),
         sa.Column('name', sa.String(255), nullable=False),
+        sa.Column('description', sa.String(500), nullable=True),
         sa.Column('parent_id', sa.UUID(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
@@ -108,10 +111,13 @@ def upgrade() -> None:
         sa.Column('company_id', sa.UUID(), nullable=False),
         sa.Column('title', sa.String(255), nullable=False),
         sa.Column('level', sa.Integer(), nullable=False, server_default='0'),
+        sa.Column('description', sa.String(500), nullable=True),
+        sa.Column('department_id', sa.UUID(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['department_id'], ['departments.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('company_id', 'title', name='uq_designation_company_title')
     )
@@ -126,6 +132,7 @@ def upgrade() -> None:
         sa.Column('full_name', sa.String(255), nullable=False),
         sa.Column('role', postgresql.ENUM('admin', 'senior_manager', 'hr_recruiter', 'employee', name='user_role', create_type=False), nullable=False, server_default='employee'),
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
+        sa.Column('is_2fa_enabled', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('last_login_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
@@ -168,6 +175,23 @@ def upgrade() -> None:
     )
     op.create_index('ix_password_reset_tokens_user_id', 'password_reset_tokens', ['user_id'])
     op.create_index('ix_password_reset_tokens_token_hash', 'password_reset_tokens', ['token_hash'])
+
+    op.create_table(
+        'notifications',
+        sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('user_id', sa.UUID(), nullable=False),
+        sa.Column('title', sa.String(255), nullable=False),
+        sa.Column('body', sa.Text(), nullable=False),
+        sa.Column('category', sa.String(50), nullable=False, server_default='system'),
+        sa.Column('action_url', sa.String(512), nullable=True),
+        sa.Column('is_read', sa.Boolean(), nullable=False, server_default='false'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_notifications_user_id', 'notifications', ['user_id'])
+    op.create_index('ix_notifications_is_read', 'notifications', ['is_read'])
 
     op.create_table(
         'employees',
@@ -243,9 +267,12 @@ def upgrade() -> None:
         sa.Column('previous_value', postgresql.JSONB(), nullable=True),
         sa.Column('new_value', postgresql.JSONB(), nullable=True),
         sa.Column('effective_date', sa.Date(), nullable=False),
+        sa.Column('reason', sa.String(500), nullable=True),
+        sa.Column('recorded_by', sa.UUID(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
         sa.ForeignKeyConstraint(['employee_id'], ['employees.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['recorded_by'], ['users.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_employment_history_employee_id', 'employment_history', ['employee_id'])
@@ -258,10 +285,12 @@ def upgrade() -> None:
         sa.Column('file_name', sa.String(255), nullable=False),
         sa.Column('file_url', sa.String(512), nullable=False),
         sa.Column('file_size_bytes', sa.BigInteger(), nullable=False),
+        sa.Column('uploaded_by', sa.UUID(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['employee_id'], ['employees.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['uploaded_by'], ['users.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_employee_documents_employee_id', 'employee_documents', ['employee_id'])
@@ -699,6 +728,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Drop tables in reverse order
+    op.drop_table('notifications')
     op.drop_table('performance_scores')
     op.drop_table('performance_reviews')
     op.drop_table('goals')

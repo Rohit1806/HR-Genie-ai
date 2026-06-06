@@ -47,18 +47,18 @@ class Employee(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     date_of_birth: Mapped[Optional[date]] = mapped_column(Date)
-    gender: Mapped[Optional[Gender]] = mapped_column(SAEnum(Gender, name="gender_enum"))
+    gender: Mapped[Optional[Gender]] = mapped_column(SAEnum(Gender, native_enum=False, length=20, values_callable=lambda x: [e.value for e in x]))
     phone: Mapped[Optional[str]] = mapped_column(String(20))
     personal_email: Mapped[Optional[str]] = mapped_column(String(255))
     address: Mapped[Optional[dict]] = mapped_column(JSON)
     emergency_contact: Mapped[Optional[dict]] = mapped_column(JSON)
     date_of_joining: Mapped[date] = mapped_column(Date, nullable=False)
     employment_type: Mapped[EmploymentType] = mapped_column(
-        SAEnum(EmploymentType, name="employment_type_enum"),
+        SAEnum(EmploymentType, name="employment_type", values_callable=lambda x: [e.value for e in x]),
         default=EmploymentType.FULL_TIME,
     )
     employment_status: Mapped[EmploymentStatus] = mapped_column(
-        SAEnum(EmploymentStatus, name="employment_status_enum"),
+        SAEnum(EmploymentStatus, name="employment_status", values_callable=lambda x: [e.value for e in x]),
         default=EmploymentStatus.ACTIVE,
         index=True,
     )
@@ -174,7 +174,7 @@ class EmployeeDocument(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         index=True,
     )
     document_type: Mapped[DocumentType] = mapped_column(
-        SAEnum(DocumentType, name="document_type_enum"),
+        SAEnum(DocumentType, name="document_type", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     file_name: Mapped[str] = mapped_column(String(255))
