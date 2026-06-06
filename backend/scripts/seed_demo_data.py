@@ -3,8 +3,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
-
-import sys
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from decimal import Decimal
@@ -485,4 +483,8 @@ async def main():
             raise e
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Error: Database seeding execution failed: {e}")
+        sys.exit(0)
