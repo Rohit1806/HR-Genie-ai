@@ -6,7 +6,8 @@ import logging
 import structlog
 
 from app.config import settings
-from app.database import init_db
+from app.database import engine, Base, init_db
+import app.models
 from app.redis_client import init_redis, close_redis
 from app.api.v1.router import api_router
 from app.core.middleware import AuditLogMiddleware, RequestIDMiddleware
@@ -48,16 +49,14 @@ async def lifespan(app: FastAPI):
         
         backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        logger.info("Dropping all database tables (Alembic downgrade base)...")
-        subprocess.run([sys.executable, '-m', 'alembic', 'downgrade', 'base'], 
-                      cwd=backend_dir,
-                      check=False)
+        logger.info("Dropping all database tables (SQLAlchemy drop_all)...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
         
-        logger.info("Recreating database tables (Alembic upgrade head)...")
-        subprocess.run([sys.executable, '-m', 'alembic', 'upgrade', 'head'], 
-                      cwd=backend_dir,
-                      check=True)
-        logger.info("Migrations completed successfully.")
+        logger.info("Recreating database tables (SQLAlchemy create_all)...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Tables drop and recreate completed successfully.")
         
         logger.info("Seeding database demo data...")
         subprocess.run([sys.executable, 'scripts/seed_demo_data.py'],
