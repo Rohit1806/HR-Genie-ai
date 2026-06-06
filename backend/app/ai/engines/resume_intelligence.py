@@ -13,8 +13,6 @@ import re
 import logging
 from pathlib import Path
 from typing import Optional
-import fitz  # PyMuPDF
-import docx
 
 from app.ai.gemini_client import call_gemini_json
 from app.ai.prompts.resume_extraction import RESUME_EXTRACTION_PROMPT
@@ -28,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract raw text from a PDF file using PyMuPDF."""
+    import fitz  # PyMuPDF
     try:
         doc = fitz.open(file_path)
         text_parts = []
@@ -44,6 +43,7 @@ def extract_text_from_pdf(file_path: str) -> str:
 
 def extract_text_from_docx(file_path: str) -> str:
     """Extract raw text from a DOCX file using python-docx."""
+    import docx
     try:
         doc = docx.Document(file_path)
         paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]

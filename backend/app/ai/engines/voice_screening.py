@@ -18,8 +18,6 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from faster_whisper import WhisperModel
-
 from app.ai.gemini_client import call_gemini_json
 from app.ai.prompts.voice_evaluation import VOICE_EVALUATION_PROMPT
 
@@ -33,6 +31,7 @@ def _get_whisper_model():
     global _WHISPER_MODEL
     if _WHISPER_MODEL is None:
         logger.info("Loading Whisper 'base' model...")
+        from faster_whisper import WhisperModel
         _WHISPER_MODEL = WhisperModel("base", device="cpu", compute_type="int8")
         logger.info("Whisper model loaded.")
     return _WHISPER_MODEL
