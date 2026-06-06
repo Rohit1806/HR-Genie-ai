@@ -86,18 +86,17 @@ app.add_middleware(RequestIDMiddleware)
 # 2. CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # 3. Trusted Host
-if settings.is_production:
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["api.hrgenie.ai", "*.hrgenie.ai"],
-    )
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"],
+)
 
 # 4. Audit Log
 app.add_middleware(AuditLogMiddleware)
