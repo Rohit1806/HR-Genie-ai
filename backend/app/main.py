@@ -109,6 +109,26 @@ app.add_middleware(AuditLogMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 
+@app.post("/setup")
+async def manual_setup():
+    try:
+        import app.models
+        from app.database import engine, Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        import subprocess, sys, os
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(
+            [sys.executable, 'scripts/seed_demo_data.py'],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True
+        )
+        return {"status": "done", "output": result.stdout, "errors": result.stderr}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 
