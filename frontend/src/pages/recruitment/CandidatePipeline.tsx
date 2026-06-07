@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
@@ -18,6 +18,7 @@ import {
   IconButton,
   alpha,
   Divider,
+  LinearProgress,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -27,6 +28,7 @@ import {
   PictureAsPdf as PdfIcon,
   TrendingUp as PromoteIcon,
   CheckCircle as SuccessIcon,
+  CloudUpload as UploadIcon,
 } from '@mui/icons-material';
 import { recruitmentApi } from '@/api/recruitment.api';
 import PageHeader from '@/components/ui/PageHeader';
@@ -63,8 +65,43 @@ export default function CandidatePipeline() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedJobId = searchParams.get('jobId') || '';
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Fetch Job Postings for dropdown selector
+  // Bulk resume upload handler
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedJobId) return;
+
+    setIsUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress({ current: i + 1, total: files.length });
+      try {
+        await recruitmentApi.uploadResumeOnly(selectedJobId, files[i]);
+        successCount++;
+      } catch (err: any) {
+        failCount++;
+        toast.error(`Failed to process ${files[i].name}: ${err.response?.data?.detail || err.message}`);
+      }
+    }
+
+    setIsUploading(false);
+    // Reset file input so the same files can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    if (successCount > 0) {
+      toast.success(`Successfully processed ${successCount} resume${successCount > 1 ? 's' : ''}!`);
+      queryClient.invalidateQueries({ queryKey: ['applications', selectedJobId] });
+    }
+    if (failCount > 0 && successCount === 0) {
+      toast.error(`All ${failCount} uploads failed.`);
+    }
+  };
   const { data: jobsData, isLoading: isLoadingJobs } = useQuery({
     queryKey: ['job-postings-dropdown'],
     queryFn: () => recruitmentApi.listJobPostings({ status: 'open' }),
@@ -137,8 +174,8 @@ export default function CandidatePipeline() {
         subtitle="Manage candidates through the recruitment stages and analyze AI fit evaluations."
       />
 
-      {/* Select Job Posting Dropdown */}
-      <Box sx={{ mb: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
+      {/* Select Job Posting Dropdown + Upload */}
+      <Box sx={{ mb: 4, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <Typography variant="body1" sx={{ color: '#F8FAFC', fontWeight: 600 }}>
           Position:
         </Typography>
@@ -163,7 +200,66 @@ export default function CandidatePipeline() {
             ))}
           </TextField>
         )}
+
+        {/* Hidden file input */}
+        <input
+          type="file"
+          accept=".pdf"
+          multiple
+          ref={fileInputRef}
+          onChange={handleResumeUpload}
+          style={{ display: 'none' }}
+          id="bulk-resume-upload"
+        />
+
+        {/* Upload button */}
+        <Button
+          variant="contained"
+          startIcon={isUploading ? <CircularProgress size={18} color="inherit" /> : <UploadIcon />}
+          disabled={!selectedJobId || isUploading}
+          onClick={() => fileInputRef.current?.click()}
+          sx={{
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            textTransform: 'none',
+            borderRadius: '10px',
+            fontWeight: 600,
+            px: 3,
+            '&:hover': {
+              background: 'linear-gradient(135deg, #059669, #047857)',
+            },
+            '&.Mui-disabled': {
+              background: alpha('#10B981', 0.3),
+              color: alpha('#fff', 0.5),
+            },
+          }}
+        >
+          {isUploading
+            ? `Processing ${uploadProgress.current}/${uploadProgress.total}...`
+            : 'Upload Resumes'}
+        </Button>
       </Box>
+
+      {/* Upload progress bar */}
+      {isUploading && (
+        <Box sx={{ mb: 2 }}>
+          <LinearProgress
+            variant="determinate"
+            value={(uploadProgress.current / uploadProgress.total) * 100}
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: alpha('#10B981', 0.15),
+              '& .MuiLinearProgress-bar': {
+                background: 'linear-gradient(90deg, #10B981, #059669)',
+                borderRadius: 3,
+              },
+            }}
+          />
+          <Typography variant="caption" sx={{ color: '#94A3B8', mt: 0.5, display: 'block' }}>
+            Processing resume {uploadProgress.current} of {uploadProgress.total}...
+          </Typography>
+        </Box>
+      )}
 
       {/* Kanban Board */}
       {isLoadingApps ? (

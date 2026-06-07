@@ -857,3 +857,159 @@ async def get_voice_screenings(
         }
         for s in screenings
     ]
+
+
+async def upload_resume_and_create_application(
+    job_posting_id: UUID,
+    file_bytes: bytes,
+    filename: str,
+    company_id: UUID,
+    db: AsyncSession,
+) -> dict:
+    """
+    Directly uploads a resume, extracts candidate info, matches it to job specs, and creates an application.
+    """
+    from app.ai.engines.resume_intelligence import resume_engine
+    parsed = await resume_engine.parse_resume(file_bytes, filename)
+    
+    cand_info = parsed.get("candidate", {})
+    email = cand_info.get("email") or f"extracted_{_uuid.uuid4().hex[:6]}@example.com"
+    first_name = cand_info.get("first_name") or "Extracted"
+    last_name = cand_info.get("last_name") or "Candidate"
+    phone = cand_info.get("phone")
+    
+    # Check if job exists
+    jp_stmt = select(JobPosting).where(
+        JobPosting.id == job_posting_id,
+        JobPosting.company_id == company_id,
+        JobPosting.deleted_at.is_(None),
+    )
+    jp_res = await db.execute(jp_stmt)
+    jp = jp_res.scalar_one_or_none()
+    if not jp:
+        raise RecruitmentServiceError("Job posting not found.", status_code=404)
+        
+    # Check duplicate
+    dup_stmt = (
+        select(Application)
+        .join(Application.candidate)
+        .where(
+            Application.job_posting_id == job_posting_id,
+            Candidate.email == email,
+            Application.deleted_at.is_(None),
+        )
+    )
+    dup_res = await db.execute(dup_stmt)
+    if dup_res.scalar_one_or_none():
+        raise RecruitmentServiceError(f"Application already exists for email: {email}", status_code=409)
+        
+    # Upsert Candidate
+    cand_stmt = select(Candidate).where(
+        Candidate.email == email,
+        Candidate.company_id == company_id,
+    )
+    cand_res = await db.execute(cand_stmt)
+    candidate = cand_res.scalar_one_or_none()
+    if not candidate:
+        candidate = Candidate(
+            company_id=company_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            phone=phone,
+            resume_text=parsed.get("raw_text"),
+        )
+        db.add(candidate)
+        await db.flush()
+    else:
+        candidate.resume_text = parsed.get("raw_text")
+        db.add(candidate)
+        await db.flush()
+        
+    # Save file locally
+    upload_dir = os.path.join(settings.UPLOAD_DIR, "resumes", str(candidate.id))
+    os.makedirs(upload_dir, exist_ok=True)
+    unique_name = f"{_uuid.uuid4().hex}_{filename}"
+    file_path = os.path.join(upload_dir, unique_name)
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+    candidate.resume_url = file_path
+    db.add(candidate)
+    
+    # Create Application
+    now = datetime.now(timezone.utc)
+    application = Application(
+        job_posting_id=job_posting_id,
+        candidate_id=candidate.id,
+        stage=ApplicationStage.ai_screening,
+        stage_history=[{"stage": "applied", "timestamp": now.isoformat(), "notes": "Resume uploaded directly"}, {"stage": "ai_screening", "timestamp": now.isoformat(), "notes": "AI Screening completed"}],
+        applied_at=now,
+    )
+    db.add(application)
+    await db.flush()
+    
+    # Run Match & Evaluation synchronously
+    from app.ai.engines.candidate_match import match_candidate_to_job
+    from app.ai.engines.candidate_evaluation import evaluate_candidate
+    
+    required_skills = [
+        s.strip()
+        for s in (jp.requirements or "").split(",")
+        if s.strip()
+    ]
+    
+    match_res = await match_candidate_to_job(
+        candidate_skills=parsed.get("skills", []),
+        candidate_experience_years=parsed.get("total_experience_years", 0.0),
+        resume_text=parsed.get("raw_text", ""),
+        job_title=jp.title,
+        job_description=jp.description,
+        job_requirements=jp.requirements or "",
+        required_skills=required_skills,
+        experience_min=jp.experience_min or 0.0,
+        experience_max=jp.experience_max or 10.0,
+    )
+    
+    eval_res = await evaluate_candidate(
+        candidate_name=f"{candidate.first_name} {candidate.last_name}",
+        candidate_skills=parsed.get("skills", []),
+        candidate_experience_years=parsed.get("total_experience_years", 0.0),
+        education_summary=", ".join([
+            f"{e.get('degree', '')} from {e.get('institution', '')}"
+            for e in parsed.get("education", [])
+        ]) if parsed.get("education") else "None",
+        resume_summary=parsed.get("summary", ""),
+        job_title=jp.title,
+        job_description=jp.description,
+        required_skills=required_skills,
+        experience_min=jp.experience_min or 0.0,
+        experience_max=jp.experience_max or 10.0,
+        match_score=match_res.get("overall_match_score", 50.0),
+        matched_skills=match_res.get("matched_skills", []),
+        missing_skills=match_res.get("missing_skills", []),
+    )
+    
+    ai_eval = AIEvaluation(
+        application_id=application.id,
+        fit_score=eval_res.get("fit_score"),
+        skill_match_score=eval_res.get("skill_match_score"),
+        experience_score=eval_res.get("experience_score"),
+        overall_score=eval_res.get("overall_score"),
+        strengths=eval_res.get("strengths"),
+        weaknesses=eval_res.get("weaknesses"),
+        ai_summary=eval_res.get("ai_summary"),
+        recommendation=eval_res.get("recommendation"),
+        confidence=eval_res.get("confidence"),
+    )
+    db.add(ai_eval)
+    await db.flush()
+    
+    return {
+        "id": str(application.id),
+        "job_posting_id": str(application.job_posting_id),
+        "candidate_name": f"{candidate.first_name} {candidate.last_name}",
+        "stage": "ai_screening",
+        "overall_score": ai_eval.overall_score,
+        "applied_at": application.applied_at.isoformat(),
+    }
+

@@ -154,6 +154,35 @@ async def submit_application(
     )
 
 
+@router.post("/applications/upload-resume", dependencies=[Depends(require_hr)])
+async def upload_resume_only(
+    job_posting_id: UUID = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Directly uploads a resume, extracts candidate info, matches it to job specs, and creates an application. (HR/Admin only)
+    """
+    from fastapi import HTTPException
+    contents = await file.read()
+    filename = file.filename or "resume.pdf"
+    
+    try:
+        return await recruitment_service.upload_resume_and_create_application(
+            job_posting_id=job_posting_id,
+            file_bytes=contents,
+            filename=filename,
+            company_id=current_user.company_id,
+            db=db,
+        )
+    except recruitment_service.RecruitmentServiceError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @router.get("/applications", response_model=dict)
 async def list_applications(
     job_posting_id: Optional[UUID] = None,

@@ -144,4 +144,14 @@ export const recruitmentApi = {
     const res = await api.get(`/recruitment/applications/${applicationId}/voice-screenings`);
     return res.data;
   },
+
+  uploadResumeOnly: async (jobPostingId: string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('job_posting_id', jobPostingId);
+    formData.append('file', file);
+    const res = await api.post('/recruitment/applications/upload-resume', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
 };
