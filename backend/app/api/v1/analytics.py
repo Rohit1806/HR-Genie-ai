@@ -64,8 +64,8 @@ async def get_admin_dashboard(
     open_jobs = (await db.execute(job_stmt)).scalar() or 0
 
     # Pending Approvals (Leave Requests pending)
-    leave_stmt = select(func.count(LeaveRequest.id)).where(
-        LeaveRequest.company_id == current_user.company_id,
+    leave_stmt = select(func.count(LeaveRequest.id)).join(Employee).where(
+        Employee.company_id == current_user.company_id,
         LeaveRequest.status == "pending",
         LeaveRequest.deleted_at.is_(None)
     )

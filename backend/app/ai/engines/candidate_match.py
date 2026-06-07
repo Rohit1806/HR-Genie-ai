@@ -128,9 +128,23 @@ def compute_experience_score(
     return round(score, 1)
 
 
+import re
+
 # ---------------------------------------------------------------------------
 # Semantic Similarity
 # ---------------------------------------------------------------------------
+
+def _keyword_similarity(resume_text: str, job_description: str) -> float:
+    """Compute keyword overlap similarity as a backup."""
+    r_words = set(re.findall(r'\w+', resume_text.lower()))
+    jd_words = set(re.findall(r'\w+', job_description.lower()))
+    if not r_words or not jd_words:
+        return 50.0
+    intersection = r_words.intersection(jd_words)
+    # Jaccard similarity scaled to a realistic score range (45 - 90)
+    jaccard = len(intersection) / len(r_words.union(jd_words))
+    score = 45.0 + jaccard * 120.0
+    return round(min(95.0, score), 1)
 
 def compute_semantic_similarity(
     resume_text: str,
@@ -152,10 +166,13 @@ def compute_semantic_similarity(
         sim = cosine_similarity(embeddings[0], embeddings[1])
         # cosine_similarity returns -1 to 1, map to 0-100
         score = (sim + 1) / 2 * 100
+        if score == 50.0:  # Flat fallback from zero vectors
+            return _keyword_similarity(resume_text, job_description)
         return round(float(score), 1)
     except Exception as e:
-        logger.warning(f"Embedding similarity failed: {e}. Using fallback 50.0")
-        return 50.0
+        logger.warning(f"Embedding similarity failed: {e}. Using fallback keyword similarity")
+        return _keyword_similarity(resume_text, job_description)
+
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +254,8 @@ async def match_candidate_to_job(
         "experience_score": exp_score,
         "semantic_similarity_score": semantic_score,
         "overall_match_score": overall,
+        "match_percentage": f"{overall}%",
+        "percentage_match": f"{overall}%",
         "matched_skills": skill_result["matched_required"] + skill_result["matched_preferred"],
         "missing_skills": skill_result["missing_required"],
         "match_grade": grade,

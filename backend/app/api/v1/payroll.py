@@ -44,7 +44,7 @@ async def initiate_payroll_run(
     """
     Initiate and compute a payroll run for a specific month and year (HR/Admin only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.hr_recruiter):
+    if current_user.role not in (UserRole.ADMIN, UserRole.HR_RECRUITER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Only Admin or HR roles can run payroll."
@@ -81,7 +81,7 @@ async def list_payroll_runs(
     """
     List all payroll runs in the company (HR/Admin only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.hr_recruiter):
+    if current_user.role not in (UserRole.ADMIN, UserRole.HR_RECRUITER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Authorized roles only."
@@ -145,7 +145,7 @@ async def get_payroll_run_entries(
     """
     Get all salary computation entries for a specific payroll run (HR/Admin only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.hr_recruiter):
+    if current_user.role not in (UserRole.ADMIN, UserRole.HR_RECRUITER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied."
@@ -178,7 +178,7 @@ async def approve_payroll_run(
     """
     Approve a computed payroll run (Admin/Senior Manager only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.senior_manager):
+    if current_user.role not in (UserRole.ADMIN, UserRole.SENIOR_MANAGER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Only admin or senior managers can approve payroll."

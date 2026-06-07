@@ -76,7 +76,7 @@ async def create_performance_cycle(
     """
     Create a new performance cycle (HR/Admin only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.hr_recruiter):
+    if current_user.role not in (UserRole.ADMIN, UserRole.HR_RECRUITER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied."
@@ -199,7 +199,7 @@ async def submit_manager_review(
     """
     Submit a manager's performance evaluation for an employee.
     """
-    if current_user.role not in (UserRole.admin, UserRole.senior_manager):
+    if current_user.role not in (UserRole.ADMIN, UserRole.SENIOR_MANAGER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Managers only can submit team evaluations."

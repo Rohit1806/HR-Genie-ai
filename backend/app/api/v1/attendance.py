@@ -123,7 +123,7 @@ async def get_team_attendance(
     """
     Get team attendance summary for a specific date (HR/Admin/Managers only).
     """
-    if current_user.role not in (UserRole.admin, UserRole.senior_manager, UserRole.hr_recruiter):
+    if current_user.role not in (UserRole.ADMIN, UserRole.SENIOR_MANAGER, UserRole.HR_RECRUITER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Role not authorized to view team attendance."

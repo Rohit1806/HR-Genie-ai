@@ -103,7 +103,6 @@ async def initiate_payroll(
         PayrollRun.company_id == company_id,
         PayrollRun.month == month,
         PayrollRun.year == year,
-        PayrollRun.deleted_at.is_(None),
     )
     dup_result = await db.execute(dup_stmt)
     existing = dup_result.scalar_one_or_none()
@@ -294,7 +293,6 @@ async def get_payroll_runs(
         select(PayrollRun)
         .where(
             PayrollRun.company_id == company_id,
-            PayrollRun.deleted_at.is_(None),
         )
         .order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
     )

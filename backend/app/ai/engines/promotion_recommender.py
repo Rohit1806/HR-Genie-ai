@@ -350,106 +350,109 @@ from app.database import AsyncSessionLocal
 
 class PromotionRecommenderEngine:
     async def recommend_promotion(self, employee_id: uuid.UUID, db: AsyncSession) -> dict:
-        from app.models.employee import Employee, EmployeeSkill, Skill, EmploymentHistory
-        from app.models.performance import PerformanceScore, PerformanceReview
-        from sqlalchemy import select, func
-        from datetime import date, timedelta
-        
-        # 1. Fetch Employee
-        employee = await db.get(Employee, employee_id)
-        if not employee:
-            return {"error": "Employee not found"}
-            
-        employee_name = employee.full_name
-        current_role = employee.designation.name if employee.designation else "Employee"
-        department = employee.department.name if employee.department else "Unassigned"
-        
-        # Target role
-        target_role = f"Senior {current_role}" if "Senior" not in current_role else f"Lead {current_role}"
-
-        # 2. Months in current role
-        months_since_joining = int((date.today() - employee.date_of_joining).days / 30.4)
-        stmt = select(EmploymentHistory).where(
-            EmploymentHistory.employee_id == employee_id,
-            EmploymentHistory.event_type.ilike("%promotion%")
-        ).order_by(EmploymentHistory.effective_date.desc())
-        promo_history = (await db.execute(stmt)).scalars().first()
-        
-        if promo_history:
-            months_in_current_role = int((date.today() - promo_history.effective_date).days / 30.4)
-        else:
-            months_in_current_role = months_since_joining
-
-        # 3. Performance history
-        stmt = select(PerformanceScore).where(
-            PerformanceScore.employee_id == employee_id
-        ).order_by(PerformanceScore.created_at.asc())
-        scores = (await db.execute(stmt)).scalars().all()
-        performance_scores = [float(s.final_score) for s in scores if s.final_score is not None]
-        if not performance_scores:
-            performance_scores = [75.0]
-
-        # 4. Skills
-        stmt = select(EmployeeSkill).where(EmployeeSkill.employee_id == employee_id)
-        emp_skills = (await db.execute(stmt)).scalars().all()
-        current_skill_count = len(emp_skills)
-        
-        one_year_ago = date.today() - timedelta(days=365)
-        stmt = select(EmployeeSkill).where(
-            EmployeeSkill.employee_id == employee_id,
-            EmployeeSkill.created_at >= one_year_ago
-        )
-        recent_skills = (await db.execute(stmt)).scalars().all()
-        skills_added_last_year = len(recent_skills)
-
-        # 5. Leadership
-        stmt = select(func.count(Employee.id)).where(Employee.reporting_manager_id == employee_id)
-        reports_count = (await db.execute(stmt)).scalar() or 0
-        manages_reports = reports_count > 0
-        mentors_others = reports_count > 0 or months_since_joining > 24
-        led_projects = int(months_since_joining / 12)
-        cross_team_collaborations = int(months_since_joining / 8)
-
-        # Manager recommendation
-        manager_recommendation = "maybe"
-        if performance_scores:
-            latest = performance_scores[-1]
-            if latest >= 80:
-                manager_recommendation = "yes"
-            elif latest < 60:
-                manager_recommendation = "no"
-
-        # 6. Compute score
-        result = await compute_promotion_score(
-            employee_name=employee_name,
-            current_role=current_role,
-            target_role=target_role,
-            performance_scores=performance_scores,
-            months_in_current_role=months_in_current_role,
-            current_skill_count=current_skill_count,
-            skills_added_last_year=skills_added_last_year,
-            manages_reports=manages_reports,
-            mentors_others=mentors_others,
-            led_projects=led_projects,
-            cross_team_collaborations=cross_team_collaborations,
-            manager_recommendation=manager_recommendation,
-            department=department,
-        )
-
-        # 7. Save to PerformanceScore
         try:
+            from app.models.employee import Employee, EmployeeSkill, Skill, EmploymentHistory
+            from app.models.performance import PerformanceScore, PerformanceReview
+            from sqlalchemy import select, func
+            from datetime import date, timedelta
+            
+            # 1. Fetch Employee
+            employee = await db.get(Employee, employee_id)
+            if not employee:
+                return {"error": "Employee not found"}
+                
+            employee_name = employee.full_name
+            current_role = employee.designation.name if employee.designation else "Employee"
+            department = employee.department.name if employee.department else "Unassigned"
+            
+            # Target role
+            target_role = f"Senior {current_role}" if "Senior" not in current_role else f"Lead {current_role}"
+
+            # 2. Months in current role
+            months_since_joining = int((date.today() - employee.date_of_joining).days / 30.4)
+            stmt = select(EmploymentHistory).where(
+                EmploymentHistory.employee_id == employee_id,
+                EmploymentHistory.event_type.ilike("%promotion%")
+            ).order_by(EmploymentHistory.effective_date.desc())
+            promo_history = (await db.execute(stmt)).scalars().first()
+            
+            if promo_history:
+                months_in_current_role = int((date.today() - promo_history.effective_date).days / 30.4)
+            else:
+                months_in_current_role = months_since_joining
+
+            # 3. Performance history
             stmt = select(PerformanceScore).where(
                 PerformanceScore.employee_id == employee_id
-            ).order_by(PerformanceScore.created_at.desc())
-            perf_score = (await db.execute(stmt)).scalars().first()
-            if perf_score:
-                perf_score.ai_promotion_score = result["promotion_score"]
-                db.add(perf_score)
-                await db.commit()
-        except Exception as e:
-            logger.error(f"Failed to save promotion score to DB: {e}")
+            ).order_by(PerformanceScore.created_at.asc())
+            scores = (await db.execute(stmt)).scalars().all()
+            performance_scores = [float(s.final_score) for s in scores if s.final_score is not None]
+            if not performance_scores:
+                performance_scores = [75.0]
 
-        return result
+            # 4. Skills
+            stmt = select(EmployeeSkill).where(EmployeeSkill.employee_id == employee_id)
+            emp_skills = (await db.execute(stmt)).scalars().all()
+            current_skill_count = len(emp_skills)
+            
+            one_year_ago = date.today() - timedelta(days=365)
+            stmt = select(EmployeeSkill).where(
+                EmployeeSkill.employee_id == employee_id,
+                EmployeeSkill.created_at >= one_year_ago
+            )
+            recent_skills = (await db.execute(stmt)).scalars().all()
+            skills_added_last_year = len(recent_skills)
+
+            # 5. Leadership
+            stmt = select(func.count(Employee.id)).where(Employee.reporting_manager_id == employee_id)
+            reports_count = (await db.execute(stmt)).scalar() or 0
+            manages_reports = reports_count > 0
+            mentors_others = reports_count > 0 or months_since_joining > 24
+            led_projects = int(months_since_joining / 12)
+            cross_team_collaborations = int(months_since_joining / 8)
+
+            # Manager recommendation
+            manager_recommendation = "maybe"
+            if performance_scores:
+                latest = performance_scores[-1]
+                if latest >= 80:
+                    manager_recommendation = "yes"
+                elif latest < 60:
+                    manager_recommendation = "no"
+
+            # 6. Compute score
+            result = await compute_promotion_score(
+                employee_name=employee_name,
+                current_role=current_role,
+                target_role=target_role,
+                performance_scores=performance_scores,
+                months_in_current_role=months_in_current_role,
+                current_skill_count=current_skill_count,
+                skills_added_last_year=skills_added_last_year,
+                manages_reports=manages_reports,
+                mentors_others=mentors_others,
+                led_projects=led_projects,
+                cross_team_collaborations=cross_team_collaborations,
+                manager_recommendation=manager_recommendation,
+                department=department,
+            )
+
+            # 7. Save to PerformanceScore
+            try:
+                stmt = select(PerformanceScore).where(
+                    PerformanceScore.employee_id == employee_id
+                ).order_by(PerformanceScore.created_at.desc())
+                perf_score = (await db.execute(stmt)).scalars().first()
+                if perf_score:
+                    perf_score.ai_promotion_score = result["promotion_score"]
+                    db.add(perf_score)
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to save promotion score to DB: {e}")
+
+            return result
+        except Exception as e:
+            return {"error": str(e), "message": "AI feature temporarily unavailable"}
 
 
 promotion_recommender_engine = PromotionRecommenderEngine()

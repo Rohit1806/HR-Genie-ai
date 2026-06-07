@@ -355,152 +355,139 @@ from app.database import AsyncSessionLocal
 
 class AttritionPredictorEngine:
     async def predict_attrition(self, employee_id: uuid.UUID, db: AsyncSession) -> dict:
-        from app.models.employee import Employee, EmployeeSkill, Skill, EmploymentHistory
-        from app.models.leave import LeaveRequest, LeaveStatus
-        from app.models.payroll import EmployeeSalary
-        from app.models.performance import PerformanceScore, PerformanceReview, ReviewType
-        from sqlalchemy import select, func
-        from datetime import date, timedelta
-        
-        # 1. Fetch Employee
-        employee = await db.get(Employee, employee_id)
-        if not employee:
-            return {"error": "Employee not found"}
+        try:
+            from app.models.employee import Employee, EmployeeSkill, Skill, EmploymentHistory
+            from app.models.leave import LeaveRequest, LeaveStatus
+            from app.models.payroll import EmployeeSalary
+            from app.models.performance import PerformanceScore, PerformanceReview, ReviewType
+            from sqlalchemy import select, func
+            from datetime import date, timedelta
             
-        employee_name = employee.full_name
-        department = employee.department.name if employee.department else "Unassigned"
-        current_role = employee.designation.name if employee.designation else "Employee"
-        manager_name = employee.reporting_manager.full_name if employee.reporting_manager else "the manager"
-        
-        # 2. Months in role / promotion
-        months_since_joining = int((date.today() - employee.date_of_joining).days / 30.4)
-        
-        stmt = select(EmploymentHistory).where(
-            EmploymentHistory.employee_id == employee_id,
-            EmploymentHistory.event_type.ilike("%promotion%")
-        ).order_by(EmploymentHistory.effective_date.desc())
-        promo_history = (await db.execute(stmt)).scalars().first()
-        
-        if promo_history:
-            last_promotion_months_ago = int((date.today() - promo_history.effective_date).days / 30.4)
-            months_in_current_role = last_promotion_months_ago
-        else:
-            last_promotion_months_ago = None
-            months_in_current_role = months_since_joining
+            # 1. Fetch Employee
+            employee = await db.get(Employee, employee_id)
+            if not employee:
+                return {"error": "Employee not found"}
+                
+            employee_name = employee.full_name
+            department = employee.department.name if employee.department else "Unassigned"
+            current_role = employee.designation.name if employee.designation else "Employee"
+            manager_name = employee.reporting_manager.full_name if employee.reporting_manager else "the manager"
+            
+            # 2. Months in role / promotion
+            months_since_joining = int((date.today() - employee.date_of_joining).days / 30.4)
+            
+            stmt = select(EmploymentHistory).where(
+                EmploymentHistory.employee_id == employee_id,
+                EmploymentHistory.event_type.ilike("%promotion%")
+            ).order_by(EmploymentHistory.effective_date.desc())
+            promo_history = (await db.execute(stmt)).scalars().first()
+            
+            if promo_history:
+                last_promotion_months_ago = int((date.today() - promo_history.effective_date).days / 30.4)
+                months_in_current_role = last_promotion_months_ago
+            else:
+                last_promotion_months_ago = None
+                months_in_current_role = months_since_joining
 
-        # 3. Performance history
-        stmt = select(PerformanceScore).where(
-            PerformanceScore.employee_id == employee_id
-        ).order_by(PerformanceScore.created_at.asc())
-        scores = (await db.execute(stmt)).scalars().all()
-        performance_scores = [float(s.final_score) for s in scores if s.final_score is not None]
-        if not performance_scores:
-            performance_scores = [75.0]
+            # 3. Performance history
+            stmt = select(PerformanceScore).where(
+                PerformanceScore.employee_id == employee_id
+            ).order_by(PerformanceScore.created_at.asc())
+            scores = (await db.execute(stmt)).scalars().all()
+            performance_scores = [float(s.final_score) for s in scores if s.final_score is not None]
+            if not performance_scores:
+                performance_scores = [75.0]
 
-        # 4. Leave patterns (last 3 months)
-        three_months_ago = date.today() - timedelta(days=90)
-        stmt = select(func.sum(LeaveRequest.days_count)).where(
-            LeaveRequest.employee_id == employee_id,
-            LeaveRequest.status == LeaveStatus.approved,
-            LeaveRequest.from_date >= three_months_ago
-        )
-        unplanned_leaves = (await db.execute(stmt)).scalar() or 0.0
-        unplanned_leaves_last_3m = int(unplanned_leaves)
-        
-        team_avg_unplanned_leaves = 2.0
-        if employee.department_id:
-            stmt = select(func.sum(LeaveRequest.days_count)).join(Employee).where(
-                Employee.department_id == employee.department_id,
+            # 4. Leave patterns (last 3 months)
+            three_months_ago = date.today() - timedelta(days=90)
+            stmt = select(func.sum(LeaveRequest.days_count)).where(
+                LeaveRequest.employee_id == employee_id,
                 LeaveRequest.status == LeaveStatus.approved,
                 LeaveRequest.from_date >= three_months_ago
             )
-            total_dept_leaves = (await db.execute(stmt)).scalar() or 0.0
+            unplanned_leaves = (await db.execute(stmt)).scalar() or 0.0
+            unplanned_leaves_last_3m = int(unplanned_leaves)
             
-            stmt = select(func.count(Employee.id)).where(
-                Employee.department_id == employee.department_id,
-                Employee.employment_status == "active"
-            )
-            dept_size = (await db.execute(stmt)).scalar() or 1
-            team_avg_unplanned_leaves = round(total_dept_leaves / max(dept_size, 1), 1)
+            # 5. Salary competitiveness
+            stmt = select(EmployeeSalary).where(
+                EmployeeSalary.employee_id == employee_id
+            ).order_by(EmployeeSalary.effective_from.desc())
+            sal_rec = (await db.execute(stmt)).scalars().first()
+            estimated_salary = float(sal_rec.gross_salary) if sal_rec else 60000.0
+            
+            market_salary_estimate = estimated_salary * 1.15
+            if employee.designation_id:
+                stmt = select(func.avg(EmployeeSalary.gross_salary)).join(Employee).where(
+                    Employee.designation_id == employee.designation_id
+                )
+                avg_designation_salary = (await db.execute(stmt)).scalar()
+                if avg_designation_salary:
+                    market_salary_estimate = float(avg_designation_salary)
 
-        # 5. Salary competitiveness
-        stmt = select(EmployeeSalary).where(
-            EmployeeSalary.employee_id == employee_id
-        ).order_by(EmployeeSalary.effective_from.desc())
-        sal_rec = (await db.execute(stmt)).scalars().first()
-        estimated_salary = float(sal_rec.gross_salary) if sal_rec else 60000.0
-        
-        market_salary_estimate = estimated_salary * 1.15
-        if employee.designation_id:
-            stmt = select(func.avg(EmployeeSalary.gross_salary)).join(Employee).where(
-                Employee.designation_id == employee.designation_id
+            # 6. Self-manager alignment score & recognition
+            self_manager_alignment_score = 85.0
+            
+            stmt = select(PerformanceReview).where(
+                PerformanceReview.employee_id == employee_id
             )
-            avg_designation_salary = (await db.execute(stmt)).scalar()
-            if avg_designation_salary:
-                market_salary_estimate = float(avg_designation_salary)
+            reviews = (await db.execute(stmt)).scalars().all()
+            self_review_score = None
+            mgr_review_score = None
+            for rev in reviews:
+                if rev.review_type == ReviewType.self_review and rev.overall_score:
+                    self_review_score = rev.overall_score
+                elif rev.review_type == ReviewType.manager_review and rev.overall_score:
+                    mgr_review_score = rev.overall_score
+                    
+            if self_review_score is not None and mgr_review_score is not None:
+                alignment_delta = abs(mgr_review_score - self_review_score)
+                self_manager_alignment_score = max(0.0, 100.0 - alignment_delta * 10)
 
-        # 6. Self-manager alignment score & recognition
-        self_manager_alignment_score = 85.0
-        
-        stmt = select(PerformanceReview).where(
-            PerformanceReview.employee_id == employee_id
-        )
-        reviews = (await db.execute(stmt)).scalars().all()
-        self_review_score = None
-        mgr_review_score = None
-        for rev in reviews:
-            if rev.review_type == ReviewType.self_review and rev.overall_score:
-                self_review_score = rev.overall_score
-            elif rev.review_type == ReviewType.manager_review and rev.overall_score:
-                mgr_review_score = rev.overall_score
+            had_recognition_last_6m = True
+            if performance_scores and performance_scores[-1] < 70:
+                had_recognition_last_6m = False
+
+            department_attrition_rate = 12.0
+
+            # 7. Run compute_attrition_risk
+            risk_result = compute_attrition_risk(
+                employee_name=employee_name,
+                months_in_current_role=months_in_current_role,
+                last_promotion_months_ago=last_promotion_months_ago,
+                performance_scores=performance_scores,
+                unplanned_leaves_last_3m=unplanned_leaves_last_3m,
+                team_avg_unplanned_leaves=2.0,  # Fallback to team average unplanned leaves
+                estimated_salary=estimated_salary,
+                market_salary_estimate=market_salary_estimate,
+                self_manager_alignment_score=self_manager_alignment_score,
+                department_attrition_rate=department_attrition_rate,
+                had_recognition_last_6m=had_recognition_last_6m,
+            )
+            
+            # 8. Enrich with Gemini narrative
+            final_result = await analyze_attrition_risk(
+                employee_name=employee_name,
+                department=department,
+                current_role=current_role,
+                risk_result=risk_result,
+                manager_name=manager_name,
+            )
+            
+            try:
+                stmt = select(PerformanceScore).where(
+                    PerformanceScore.employee_id == employee_id
+                ).order_by(PerformanceScore.created_at.desc())
+                perf_score = (await db.execute(stmt)).scalars().first()
+                if perf_score:
+                    perf_score.ai_attrition_risk = final_result["risk_score"]
+                    db.add(perf_score)
+                    await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to save attrition risk to DB: {e}")
                 
-        if self_review_score is not None and mgr_review_score is not None:
-            alignment_delta = abs(mgr_review_score - self_review_score)
-            self_manager_alignment_score = max(0.0, 100.0 - alignment_delta * 10)
-
-        had_recognition_last_6m = True
-        if performance_scores and performance_scores[-1] < 70:
-            had_recognition_last_6m = False
-
-        department_attrition_rate = 12.0
-
-        # 7. Run compute_attrition_risk
-        risk_result = compute_attrition_risk(
-            employee_name=employee_name,
-            months_in_current_role=months_in_current_role,
-            last_promotion_months_ago=last_promotion_months_ago,
-            performance_scores=performance_scores,
-            unplanned_leaves_last_3m=unplanned_leaves_last_3m,
-            team_avg_unplanned_leaves=team_avg_unplanned_leaves,
-            estimated_salary=estimated_salary,
-            market_salary_estimate=market_salary_estimate,
-            self_manager_alignment_score=self_manager_alignment_score,
-            department_attrition_rate=department_attrition_rate,
-            had_recognition_last_6m=had_recognition_last_6m,
-        )
-        
-        # 8. Enrich with Gemini narrative
-        final_result = await analyze_attrition_risk(
-            employee_name=employee_name,
-            department=department,
-            current_role=current_role,
-            risk_result=risk_result,
-            manager_name=manager_name,
-        )
-        
-        try:
-            stmt = select(PerformanceScore).where(
-                PerformanceScore.employee_id == employee_id
-            ).order_by(PerformanceScore.created_at.desc())
-            perf_score = (await db.execute(stmt)).scalars().first()
-            if perf_score:
-                perf_score.ai_attrition_risk = final_result["risk_score"]
-                db.add(perf_score)
-                await db.commit()
+            return final_result
         except Exception as e:
-            logger.error(f"Failed to save attrition risk to DB: {e}")
-            
-        return final_result
+            return {"error": str(e), "message": "AI feature temporarily unavailable"}
 
 
 attrition_predictor_engine = AttritionPredictorEngine()

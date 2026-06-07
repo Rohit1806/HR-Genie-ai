@@ -322,7 +322,7 @@ async def create_employee(
         reporting_manager_id=data.reporting_manager_id,
         date_of_joining=data.date_of_joining or date.today(),
         employment_type=EmploymentType(data.employment_type) if isinstance(data.employment_type, str) else data.employment_type,
-        employment_status=EmploymentStatus.active,
+        employment_status=EmploymentStatus.ACTIVE,
         work_location=data.work_location,
     )
     db.add(employee)
@@ -434,7 +434,7 @@ async def terminate_employee(
     )
     db.add(history)
 
-    employee.employment_status = EmploymentStatus.terminated
+    employee.employment_status = EmploymentStatus.TERMINATED
     employee.deleted_at = datetime.now(timezone.utc)
     employee.updated_at = datetime.now(timezone.utc)
 
@@ -466,7 +466,7 @@ async def get_org_chart(
         select(Employee)
         .where(
             Employee.company_id == company_id,
-            Employee.employment_status == EmploymentStatus.active,
+            Employee.employment_status == EmploymentStatus.ACTIVE,
             Employee.deleted_at.is_(None),
         )
         .options(

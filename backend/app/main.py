@@ -9,7 +9,17 @@ from app.config import settings
 from app.database import engine, Base, init_db
 import app.models
 from app.redis_client import init_redis, close_redis
-from app.api.v1.router import api_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.employees import router as employee_router
+from app.api.v1.attendance import router as attendance_router
+from app.api.v1.leaves import router as leave_router
+from app.api.v1.payroll import router as payroll_router
+from app.api.v1.performance import router as performance_router
+from app.api.v1.recruitment import router as recruitment_router
+from app.api.v1.analytics import router as analytics_router
+from app.api.v1.ai import router as ai_router
+from app.api.v1.ws import router as ws_router
+from app.api.v1.admin import router as admin_router
 from app.core.middleware import AuditLogMiddleware, RequestIDMiddleware
 
 # Configure structured logging
@@ -90,7 +100,7 @@ app.add_middleware(RequestIDMiddleware)
 # 2. CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -107,7 +117,17 @@ app.add_middleware(AuditLogMiddleware)
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1/auth")
+app.include_router(employee_router, prefix="/api/v1/employees")
+app.include_router(attendance_router, prefix="/api/v1/attendance")
+app.include_router(leave_router, prefix="/api/v1/leaves")
+app.include_router(payroll_router, prefix="/api/v1/payroll")
+app.include_router(performance_router, prefix="/api/v1/performance")
+app.include_router(recruitment_router, prefix="/api/v1/recruitment")
+app.include_router(analytics_router, prefix="/api/v1/analytics")
+app.include_router(ai_router, prefix="/api/v1/ai")
+app.include_router(ws_router, prefix="/api/v1/ws")
+app.include_router(admin_router, prefix="/api/v1/admin")
 
 @app.post("/setup")
 async def manual_setup():

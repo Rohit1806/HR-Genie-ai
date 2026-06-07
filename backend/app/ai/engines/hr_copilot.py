@@ -327,40 +327,43 @@ class HRCopilotEngine:
         user_id: uuid.UUID,
         company_id: uuid.UUID,
     ) -> dict:
-        if not session_id:
-            session_id = "default_session"
-        
-        if not hasattr(self, "_histories"):
-            self._histories = {}
-        history = self._histories.get(session_id, [])
-
-        context = {}
         try:
-            from app.models.auth import User
-            from app.models.employee import Employee
-            from sqlalchemy import select
-            async with AsyncSessionLocal() as db:
-                stmt = select(User).where(User.id == user_id)
-                user = (await db.execute(stmt)).scalar_one_or_none()
-                if user:
-                    context["user_role"] = user.role.value if hasattr(user.role, "value") else str(user.role)
-                    
-                    emp_stmt = select(Employee).where(Employee.user_id == user_id)
-                    emp = (await db.execute(emp_stmt)).scalar_one_or_none()
-                    if emp:
-                        context["user_name"] = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
-                    else:
-                        context["user_name"] = user.email
+            if not session_id:
+                session_id = "default_session"
+            
+            if not hasattr(self, "_histories"):
+                self._histories = {}
+            history = self._histories.get(session_id, [])
+
+            context = {}
+            try:
+                from app.models.auth import User
+                from app.models.employee import Employee
+                from sqlalchemy import select
+                async with AsyncSessionLocal() as db:
+                    stmt = select(User).where(User.id == user_id)
+                    user = (await db.execute(stmt)).scalar_one_or_none()
+                    if user:
+                        context["user_role"] = user.role.value if hasattr(user.role, "value") else str(user.role)
+                        
+                        emp_stmt = select(Employee).where(Employee.user_id == user_id)
+                        emp = (await db.execute(emp_stmt)).scalar_one_or_none()
+                        if emp:
+                            context["user_name"] = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
+                        else:
+                            context["user_name"] = user.email
+            except Exception as e:
+                logger.error(f"Failed to fetch user context for chat: {e}")
+
+            res = await get_copilot_response(message, history, context)
+            
+            history.append({"role": "user", "parts": [{"text": message}]})
+            history.append({"role": "model", "parts": [{"text": res.get("response", "")}]})
+            self._histories[session_id] = history
+
+            return res
         except Exception as e:
-            logger.error(f"Failed to fetch user context for chat: {e}")
-
-        res = await get_copilot_response(message, history, context)
-        
-        history.append({"role": "user", "parts": [{"text": message}]})
-        history.append({"role": "model", "parts": [{"text": res.get("response", "")}]})
-        self._histories[session_id] = history
-
-        return res
+            return {"error": str(e), "message": "AI feature temporarily unavailable"}
 
     async def execute_action(
         self,
@@ -370,35 +373,38 @@ class HRCopilotEngine:
         company_id: uuid.UUID,
     ) -> dict:
         try:
-            quick_action = QuickAction(action)
-        except ValueError:
-            return {
-                "action": action,
-                "result": f"Action '{action}' is not supported.",
-                "formatted_output": "",
-            }
-        
-        context = {}
-        try:
-            from app.models.auth import User
-            from app.models.employee import Employee
-            from sqlalchemy import select
-            async with AsyncSessionLocal() as db:
-                stmt = select(User).where(User.id == user_id)
-                user = (await db.execute(stmt)).scalar_one_or_none()
-                if user:
-                    context["user_role"] = user.role.value if hasattr(user.role, "value") else str(user.role)
-                    
-                    emp_stmt = select(Employee).where(Employee.user_id == user_id)
-                    emp = (await db.execute(emp_stmt)).scalar_one_or_none()
-                    if emp:
-                        context["user_name"] = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
-                    else:
-                        context["user_name"] = user.email
-        except Exception as e:
-            logger.error(f"Failed to fetch user context for quick action: {e}")
+            try:
+                quick_action = QuickAction(action)
+            except ValueError:
+                return {
+                    "action": action,
+                    "result": f"Action '{action}' is not supported.",
+                    "formatted_output": "",
+                }
+            
+            context = {}
+            try:
+                from app.models.auth import User
+                from app.models.employee import Employee
+                from sqlalchemy import select
+                async with AsyncSessionLocal() as db:
+                    stmt = select(User).where(User.id == user_id)
+                    user = (await db.execute(stmt)).scalar_one_or_none()
+                    if user:
+                        context["user_role"] = user.role.value if hasattr(user.role, "value") else str(user.role)
+                        
+                        emp_stmt = select(Employee).where(Employee.user_id == user_id)
+                        emp = (await db.execute(emp_stmt)).scalar_one_or_none()
+                        if emp:
+                            context["user_name"] = f"{emp.first_name or ''} {emp.last_name or ''}".strip()
+                        else:
+                            context["user_name"] = user.email
+            except Exception as e:
+                logger.error(f"Failed to fetch user context for quick action: {e}")
 
-        return await execute_quick_action(quick_action, params, context)
+            return await execute_quick_action(quick_action, params, context)
+        except Exception as e:
+            return {"error": str(e), "message": "AI feature temporarily unavailable"}
 
 
 hr_copilot_engine = HRCopilotEngine()
